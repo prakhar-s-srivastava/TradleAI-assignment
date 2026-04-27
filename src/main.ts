@@ -1,14 +1,16 @@
 import rawJson from "./candles.json";
+import { renderAxisOverlay } from "./axisOverlay";
 import { parseCandleSeries } from "./types/candle";
-import { buildCandleVertices, initCandleChart, uploadAndDraw } from "./webgl/candleChart";
+import { buildChartGeometry, initCandleChart, uploadAndDraw } from "./webgl/candleChart";
 
 const series = parseCandleSeries(rawJson);
 
 const title = document.getElementById("title");
 const meta = document.getElementById("meta");
 const canvas = document.getElementById("chart") as HTMLCanvasElement | null;
+const axisOverlay = document.getElementById("axis-overlay");
 
-if (!title || !meta || !canvas) {
+if (!title || !meta || !canvas || !axisOverlay) {
   throw new Error("Missing DOM nodes");
 }
 
@@ -16,10 +18,11 @@ title.textContent = `${series.symbol} · ${series.interval}`;
 meta.textContent = `${series.candles.length} candles · WebGL2`;
 
 const chart = initCandleChart(canvas);
-const vertices = buildCandleVertices(series.candles);
+const geometry = buildChartGeometry(series.candles);
+renderAxisOverlay(axisOverlay, geometry.markersY, geometry.markersX);
 
 function frame() {
-  uploadAndDraw(chart, vertices);
+  uploadAndDraw(chart, geometry);
 }
 
 frame();

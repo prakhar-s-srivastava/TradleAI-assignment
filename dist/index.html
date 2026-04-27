@@ -30,20 +30,51 @@
         opacity: 0.75;
         margin-bottom: 1rem;
       }
-      canvas {
+      .chart-wrap {
+        position: relative;
         width: min(960px, 100%);
+      }
+      .chart-wrap canvas {
+        width: 100%;
         height: 480px;
         display: block;
         border-radius: 8px;
         border: 1px solid #30363d;
         background: #161b22;
       }
+      #axis-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        font-variant-numeric: tabular-nums;
+      }
+      #axis-overlay .axis-y {
+        position: absolute;
+        left: 6px;
+        transform: translateY(-50%);
+        font-size: 11px;
+        line-height: 1;
+        color: #8b949e;
+        white-space: nowrap;
+      }
+      #axis-overlay .axis-x {
+        position: absolute;
+        bottom: 8px;
+        transform: translateX(-50%);
+        font-size: 10px;
+        line-height: 1;
+        color: #8b949e;
+        white-space: nowrap;
+      }
     </style>
-    <script type="module" crossorigin src="/assets/index-AJ7Ddytp.js"></script>
+    <script type="module" crossorigin src="/assets/index-LMYnUE4z.js"></script>
   </head>
   <body>
     <h1 id="title">Loading…</h1>
     <p class="meta" id="meta"></p>
-    <canvas id="chart" width="960" height="480"></canvas>
+    <div class="chart-wrap">
+      <canvas id="chart" width="960" height="480"></canvas>
+      <div id="axis-overlay" aria-hidden="true"></div>
+    </div>
   </body>
 </html>
