@@ -12,8 +12,9 @@ const metaEl = document.getElementById("meta");
 const canvas = document.getElementById("chart") as HTMLCanvasElement | null;
 const axisOverlayEl = document.getElementById("axis-overlay");
 const randomizeBtn = document.getElementById("randomize") as HTMLButtonElement | null;
+const downloadJsonBtn = document.getElementById("download-json") as HTMLButtonElement | null;
 
-if (!titleEl || !metaEl || !canvas || !axisOverlayEl || !randomizeBtn) {
+if (!titleEl || !metaEl || !canvas || !axisOverlayEl || !randomizeBtn || !downloadJsonBtn) {
   throw new Error("Missing DOM nodes");
 }
 
@@ -47,7 +48,26 @@ function setSeries(next: CandleSeries) {
   render();
 }
 
+function downloadSeriesJson(s: CandleSeries): void {
+  const body = JSON.stringify(s, null, 2);
+  const blob = new Blob([body], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const safe = s.symbol.replace(/[^\w.-]+/g, "_");
+  a.download = `${safe}-${s.interval}.json`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 setSeries(initialSeries);
+
+downloadJsonBtn.addEventListener("click", () => {
+  downloadSeriesJson(series);
+});
 
 randomizeBtn.addEventListener("click", () => {
   const startPrice = initialSeries.candles[0]?.o ?? 100;
