@@ -28,11 +28,28 @@ const MIN_VISIBLE = 3;
 
 const chart = initCandleChart(canvas);
 let series: CandleSeries = initialSeries;
+/** Floating-point view window so smooth zoom/pan steps accumulate. */
+let viewStartF = 0;
+let viewSpanF = series.candles.length;
 let viewStart = 0;
 let viewEnd = series.candles.length;
 let geometry = buildChartGeometry(series.candles.slice(viewStart, viewEnd));
 
+function commitView() {
+  const total = series.candles.length;
+  if (viewSpanF < MIN_VISIBLE) viewSpanF = MIN_VISIBLE;
+  if (viewSpanF > total) viewSpanF = total;
+  if (viewStartF < 0) viewStartF = 0;
+  if (viewStartF + viewSpanF > total) viewStartF = total - viewSpanF;
+  viewStart = Math.max(0, Math.round(viewStartF));
+  viewEnd = Math.min(total, Math.round(viewStartF + viewSpanF));
+  if (viewEnd - viewStart < MIN_VISIBLE) {
+    viewEnd = Math.min(total, viewStart + MIN_VISIBLE);
+  }
+}
+
 function render() {
+  commitView();
   const visible = series.candles.slice(viewStart, viewEnd);
   title.textContent = `${series.symbol} · ${series.interval}`;
   meta.textContent = `${visible.length} / ${series.candles.length} candles · WebGL2`;
@@ -45,8 +62,8 @@ function render() {
 
 function setSeries(next: CandleSeries) {
   series = next;
-  viewStart = 0;
-  viewEnd = next.candles.length;
+  viewStartF = 0;
+  viewSpanF = next.candles.length;
   render();
 }
 
@@ -85,6 +102,11 @@ randomizeBtn.addEventListener("click", () => {
   setSeries(next);
 });
 
+/** Wheel-delta to log-zoom factor (per pixel of `deltaY`). Higher = faster zoom. */
+const ZOOM_PER_PIXEL = 0.004;
+/** Damping multiplier applied to mouse-pan speed (1 = chart sticks to cursor). */
+const PAN_DAMPING = 0.45;
+
 canvas.addEventListener(
   "wheel",
   (e) => {
@@ -95,26 +117,17 @@ canvas.addEventListener(
     const rect = canvas.getBoundingClientRect();
     const xFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
 
-    const span = viewEnd - viewStart;
-    const anchor = viewStart + xFrac * span;
+    let dy = e.deltaY;
+    if (e.deltaMode === 1) dy *= 16;
+    else if (e.deltaMode === 2) dy *= rect.height;
 
-    const factor = e.deltaY < 0 ? 0.85 : 1.18;
-    let newSpan = Math.round(span * factor);
-    newSpan = Math.max(MIN_VISIBLE, Math.min(total, newSpan));
-    if (newSpan === span) return;
+    const factor = Math.exp(dy * ZOOM_PER_PIXEL);
+    const anchor = viewStartF + xFrac * viewSpanF;
+    const newSpan = Math.max(MIN_VISIBLE, Math.min(total, viewSpanF * factor));
+    if (newSpan === viewSpanF) return;
 
-    let newStart = Math.round(anchor - xFrac * newSpan);
-    let newEnd = newStart + newSpan;
-    if (newStart < 0) {
-      newStart = 0;
-      newEnd = newSpan;
-    }
-    if (newEnd > total) {
-      newEnd = total;
-      newStart = total - newSpan;
-    }
-    viewStart = newStart;
-    viewEnd = newEnd;
+    viewStartF = anchor - xFrac * newSpan;
+    viewSpanF = newSpan;
     render();
   },
   { passive: false },
@@ -124,28 +137,11 @@ window.addEventListener("resize", () => uploadAndDraw(chart, geometry));
 
 let panPointerId: number | null = null;
 let panLastClientX = 0;
-/** Accumulated fractional candle offset so sub-pixel drags add up. */
-let panAccum = 0;
-
-function applyPanByShift(shift: number): void {
-  if (shift === 0) return;
-  const total = series.candles.length;
-  const span = viewEnd - viewStart;
-  if (span >= total) return;
-  let newStart = viewStart + shift;
-  if (newStart < 0) newStart = 0;
-  if (newStart + span > total) newStart = total - span;
-  if (newStart === viewStart) return;
-  viewStart = newStart;
-  viewEnd = newStart + span;
-  render();
-}
 
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   panPointerId = e.pointerId;
   panLastClientX = e.clientX;
-  panAccum = 0;
   canvas.setPointerCapture(e.pointerId);
   canvas.style.cursor = "grabbing";
   e.preventDefault();
@@ -155,20 +151,15 @@ canvas.addEventListener("pointermove", (e) => {
   if (panPointerId !== e.pointerId) return;
   const dx = e.clientX - panLastClientX;
   panLastClientX = e.clientX;
+  if (dx === 0) return;
   const rect = canvas.getBoundingClientRect();
-  const span = viewEnd - viewStart;
-  panAccum += (-dx / rect.width) * span;
-  const shift = Math.trunc(panAccum);
-  if (shift !== 0) {
-    panAccum -= shift;
-    applyPanByShift(shift);
-  }
+  viewStartF += (-dx / rect.width) * viewSpanF * PAN_DAMPING;
+  render();
 });
 
 function endPan(e: PointerEvent): void {
   if (panPointerId !== e.pointerId) return;
   panPointerId = null;
-  panAccum = 0;
   canvas.style.cursor = "";
   if (canvas.hasPointerCapture(e.pointerId)) {
     canvas.releasePointerCapture(e.pointerId);
