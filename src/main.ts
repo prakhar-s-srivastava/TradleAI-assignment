@@ -19,7 +19,9 @@ meta.textContent = `${series.candles.length} candles · WebGL2`;
 
 const chart = initCandleChart(canvas);
 const geometry = buildChartGeometry(series.candles);
-renderAxisOverlay(axisOverlay, geometry.markersY, geometry.markersX);
+renderAxisOverlay(axisOverlay, geometry.markersY, geometry.markersX, geometry.markersVolY, {
+  bottomLabelNdc: geometry.bottomLabelNdc,
+});
 
 function frame() {
   uploadAndDraw(chart, geometry);

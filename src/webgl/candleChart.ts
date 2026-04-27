@@ -85,6 +85,11 @@ function niceStep(range: number, targetTicks: number): number {
   return niceFract * 10 ** exp;
 }
 
+/** Fraction of the canvas height reserved for the volume strip at the bottom. */
+const VOLUME_FRACTION = 0.22;
+/** NDC gap between price pane and volume strip (used for time labels). */
+const PANE_GAP = 0.06;
+
 export type ChartLayout = {
   minP: number;
   maxP: number;
@@ -95,6 +100,10 @@ export type ChartLayout = {
   priceToY: (p: number) => number;
   plotLeft: number;
   plotRight: number;
+  /** Top of volume strip in NDC (below this is volume, above is gap+price). */
+  volTop: number;
+  /** Bottom of price pane in NDC (just above the gap). */
+  priceBottom: number;
 };
 
 function computeLayout(candles: Candle[]): ChartLayout | null {
@@ -109,7 +118,10 @@ function computeLayout(candles: Candle[]): ChartLayout | null {
   minP -= padY;
   maxP += padY;
   const invRange = 1 / (maxP - minP);
-  const priceToY = (p: number) => -1 + 2 * ((p - minP) * invRange);
+  const volTop = -1 + 2 * VOLUME_FRACTION;
+  const priceBottom = volTop + PANE_GAP;
+  const priceHeight = 1 - priceBottom;
+  const priceToY = (p: number) => priceBottom + priceHeight * ((p - minP) * invRange);
   const margin = 0.06;
   const span = 2 - 2 * margin;
   return {
@@ -122,18 +134,24 @@ function computeLayout(candles: Candle[]): ChartLayout | null {
     priceToY,
     plotLeft: -1 + margin,
     plotRight: 1 - margin,
+    volTop,
+    priceBottom,
   };
 }
 
 export type AxisMarkerY = { price: number; yNdc: number };
 export type AxisMarkerX = { label: string; xNdc: number };
+export type AxisMarkerVolY = { volume: number; yNdc: number };
 
-/** Line list (GL_LINES): grid + tick marks + axes; triangles: candles */
+/** Line list (GL_LINES): grid + tick marks + axes; triangles: candles + volume bars */
 export type ChartGeometry = {
   lineVerts: Float32Array;
   triVerts: Float32Array;
   markersY: AxisMarkerY[];
   markersX: AxisMarkerX[];
+  markersVolY: AxisMarkerVolY[];
+  /** NDC y for the time-label row at the bottom of the volume strip. */
+  bottomLabelNdc: number;
 };
 
 function formatTimeLabel(ms: number): string {
@@ -149,12 +167,16 @@ export function buildChartGeometry(candles: Candle[]): ChartGeometry {
       triVerts: new Float32Array(0),
       markersY: [],
       markersX: [],
+      markersVolY: [],
+      bottomLabelNdc: -1,
     };
   }
   const lines: number[] = [];
   const [gr, gg, gb] = GRID_RGB;
   const [ar, ag, ab] = AXIS_RGB;
-  const { plotLeft: xl, plotRight: xr, span, n, priceToY, minP, maxP } = layout;
+  const volGridRgb: [number, number, number] = [0.16, 0.19, 0.24];
+  const { plotLeft: xl, plotRight: xr, span, n, priceToY, minP, maxP, volTop, priceBottom } =
+    layout;
   const tickNdc = 0.018;
 
   const step = niceStep(maxP - minP, 6);
@@ -164,6 +186,7 @@ export function buildChartGeometry(candles: Candle[]): ChartGeometry {
   for (let k = 0; k < hCount; k++) {
     const p = start + k * step;
     const y = priceToY(p);
+    if (y < priceBottom) continue;
     pushLine(lines, xl, y, xr, y, gr, gg, gb);
     pushLine(lines, xl - tickNdc, y, xl, y, ar, ag, ab);
     markersY.push({ price: p, yNdc: y });
@@ -171,11 +194,15 @@ export function buildChartGeometry(candles: Candle[]): ChartGeometry {
 
   for (let i = 0; i <= n; i++) {
     const x = xl + (span * i) / n;
-    pushLine(lines, x, -1, x, 1, gr, gg, gb);
+    pushLine(lines, x, priceBottom, x, 1, gr, gg, gb);
+    pushLine(lines, x, -1, x, volTop, gr, gg, gb);
     pushLine(lines, x, -1, x, -1 + tickNdc, ar, ag, ab);
   }
 
-  pushLine(lines, xl, -1, xl, 1, ar, ag, ab);
+  pushLine(lines, xl, priceBottom, xl, 1, ar, ag, ab);
+  pushLine(lines, xl, -1, xl, volTop, ar, ag, ab);
+  pushLine(lines, xl, priceBottom, xr, priceBottom, ar, ag, ab);
+  pushLine(lines, xl, volTop, xr, volTop, volGridRgb[0], volGridRgb[1], volGridRgb[2]);
   pushLine(lines, xl, -1, xr, -1, ar, ag, ab);
 
   const markersX: AxisMarkerX[] = [];
@@ -219,11 +246,51 @@ export function buildChartGeometry(candles: Candle[]): ChartGeometry {
     pushQuad(verts, xCenter - bodyHalf, y0, xCenter + bodyHalf, y1, r, g, b);
   }
 
+  let maxV = 0;
+  for (const c of candles) maxV = Math.max(maxV, c.v);
+  if (maxV <= 0) maxV = 1;
+
+  const stripH = volTop - -1;
+  const volPad = stripH * 0.1;
+  const vBase = -1 + volPad;
+  const vTopInner = volTop - volPad * 0.4;
+  const volSpan = Math.max(1e-6, vTopInner - vBase);
+  const volVToY = (v: number) => vBase + volSpan * (v / maxV);
+
+  const vStep = niceStep(maxV, 3);
+  const markersVolY: AxisMarkerVolY[] = [];
+  let vv = 0;
+  for (let guard = 0; guard < 16; guard++) {
+    const clamped = Math.min(vv, maxV);
+    const y = volVToY(clamped);
+    pushLine(lines, xl, y, xr, y, volGridRgb[0], volGridRgb[1], volGridRgb[2]);
+    pushLine(lines, xl - tickNdc, y, xl, y, ar, ag, ab);
+    markersVolY.push({ volume: clamped, yNdc: y });
+    if (clamped >= maxV - 1e-9) break;
+    vv += vStep;
+  }
+
+  const barHalf = (span / n) * 0.36;
+  for (let i = 0; i < n; i++) {
+    const c = candles[i]!;
+    const xCenter = xl + (span * (i + 0.5)) / n;
+    const bull = c.c >= c.o;
+    const yTop = volVToY(c.v);
+    const vr = bull ? 0.16 : 0.45;
+    const vg = bull ? 0.55 : 0.2;
+    const vb = bull ? 0.28 : 0.22;
+    pushQuad(verts, xCenter - barHalf, vBase, xCenter + barHalf, yTop, vr, vg, vb);
+  }
+
+  const bottomLabelNdc = (volTop + priceBottom) / 2;
+
   return {
     lineVerts: new Float32Array(lines),
     triVerts: new Float32Array(verts),
     markersY,
     markersX,
+    markersVolY,
+    bottomLabelNdc,
   };
 }
 
