@@ -1,31 +1,101 @@
 import rawJson from "./candles.json";
 import { renderAxisOverlay } from "./axisOverlay";
+import { generateRandomSeries } from "./randomCandles";
+import type { CandleSeries } from "./types/candle";
 import { parseCandleSeries } from "./types/candle";
 import { buildChartGeometry, initCandleChart, uploadAndDraw } from "./webgl/candleChart";
 
-const series = parseCandleSeries(rawJson);
+const initialSeries = parseCandleSeries(rawJson);
 
-const title = document.getElementById("title");
-const meta = document.getElementById("meta");
+const titleEl = document.getElementById("title");
+const metaEl = document.getElementById("meta");
 const canvas = document.getElementById("chart") as HTMLCanvasElement | null;
-const axisOverlay = document.getElementById("axis-overlay");
+const axisOverlayEl = document.getElementById("axis-overlay");
+const randomizeBtn = document.getElementById("randomize") as HTMLButtonElement | null;
 
-if (!title || !meta || !canvas || !axisOverlay) {
+if (!titleEl || !metaEl || !canvas || !axisOverlayEl || !randomizeBtn) {
   throw new Error("Missing DOM nodes");
 }
 
-title.textContent = `${series.symbol} · ${series.interval}`;
-meta.textContent = `${series.candles.length} candles · WebGL2`;
+const title: HTMLElement = titleEl;
+const meta: HTMLElement = metaEl;
+const axisOverlay: HTMLElement = axisOverlayEl;
+
+const MIN_VISIBLE = 3;
 
 const chart = initCandleChart(canvas);
-const geometry = buildChartGeometry(series.candles);
-renderAxisOverlay(axisOverlay, geometry.markersY, geometry.markersX, geometry.markersVolY, {
-  bottomLabelNdc: geometry.bottomLabelNdc,
-});
+let series: CandleSeries = initialSeries;
+let viewStart = 0;
+let viewEnd = series.candles.length;
+let geometry = buildChartGeometry(series.candles.slice(viewStart, viewEnd));
 
-function frame() {
+function render() {
+  const visible = series.candles.slice(viewStart, viewEnd);
+  title.textContent = `${series.symbol} · ${series.interval}`;
+  meta.textContent = `${visible.length} / ${series.candles.length} candles · WebGL2`;
+  geometry = buildChartGeometry(visible);
+  renderAxisOverlay(axisOverlay, geometry.markersY, geometry.markersX, geometry.markersVolY, {
+    bottomLabelNdc: geometry.bottomLabelNdc,
+  });
   uploadAndDraw(chart, geometry);
 }
 
-frame();
-window.addEventListener("resize", frame);
+function setSeries(next: CandleSeries) {
+  series = next;
+  viewStart = 0;
+  viewEnd = next.candles.length;
+  render();
+}
+
+setSeries(initialSeries);
+
+randomizeBtn.addEventListener("click", () => {
+  const startPrice = initialSeries.candles[0]?.o ?? 100;
+  const startTime = initialSeries.candles[0]?.t ?? Date.now();
+  const length = 40 + Math.floor(Math.random() * 211); // 40..250
+  const next = generateRandomSeries({
+    symbol: initialSeries.symbol,
+    interval: initialSeries.interval,
+    length,
+    startPrice,
+    startTime,
+  });
+  setSeries(next);
+});
+
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    const total = series.candles.length;
+    if (total <= MIN_VISIBLE) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const xFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+    const span = viewEnd - viewStart;
+    const anchor = viewStart + xFrac * span;
+
+    const factor = e.deltaY < 0 ? 0.85 : 1.18;
+    let newSpan = Math.round(span * factor);
+    newSpan = Math.max(MIN_VISIBLE, Math.min(total, newSpan));
+    if (newSpan === span) return;
+
+    let newStart = Math.round(anchor - xFrac * newSpan);
+    let newEnd = newStart + newSpan;
+    if (newStart < 0) {
+      newStart = 0;
+      newEnd = newSpan;
+    }
+    if (newEnd > total) {
+      newEnd = total;
+      newStart = total - newSpan;
+    }
+    viewStart = newStart;
+    viewEnd = newEnd;
+    render();
+  },
+  { passive: false },
+);
+
+window.addEventListener("resize", () => uploadAndDraw(chart, geometry));

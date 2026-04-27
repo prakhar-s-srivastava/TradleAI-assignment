@@ -30,6 +30,31 @@
         opacity: 0.75;
         margin-bottom: 1rem;
       }
+      .toolbar {
+        width: min(960px, 100%);
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 0.5rem;
+      }
+      .toolbar button {
+        appearance: none;
+        background: #21262d;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+      .toolbar button:hover {
+        background: #30363d;
+        border-color: #484f58;
+      }
+      .toolbar button:active {
+        background: #1c2128;
+      }
       .chart-wrap {
         position: relative;
         width: min(960px, 100%);
@@ -43,6 +68,8 @@
         border-radius: 8px;
         border: 1px solid #30363d;
         background: #161b22;
+        cursor: ew-resize;
+        touch-action: none;
       }
       #axis-overlay {
         position: absolute;
@@ -76,11 +103,14 @@
         white-space: nowrap;
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-DFP4-9Zc.js"></script>
+    <script type="module" crossorigin src="/assets/index-COARHa7r.js"></script>
   </head>
   <body>
     <h1 id="title">Loading…</h1>
     <p class="meta" id="meta"></p>
+    <div class="toolbar">
+      <button id="randomize" type="button">Randomize</button>
+    </div>
     <div class="chart-wrap">
       <canvas id="chart" width="960" height="480"></canvas>
       <div id="axis-overlay" aria-hidden="true"></div>
