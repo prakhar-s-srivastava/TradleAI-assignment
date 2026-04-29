@@ -91,7 +91,7 @@ downloadJsonBtn.addEventListener("click", () => {
 randomizeBtn.addEventListener("click", () => {
   const startPrice = initialSeries.candles[0]?.o ?? 100;
   const startTime = initialSeries.candles[0]?.t ?? Date.now();
-  const length = 40 + Math.floor(Math.random() * 500); // 40..250
+  const length = 40 + Math.floor(Math.random() * 5000); // 40..250
   const next = generateRandomSeries({
     symbol: initialSeries.symbol,
     interval: initialSeries.interval,
